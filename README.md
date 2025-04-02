@@ -1,102 +1,75 @@
-# DLCO Lab Mini Project
+# Assembler-Emulator
+The aim of this project is to create a two pass assembler for a reduced simple Assembly instruction set, and then to write and test programs in this simple assembly language. The latter part of the project works on building an Emulator for this simple machine.
 
-## Overview
-The DLCO Lab Mini Project is an assembler and emulator designed to process assembly language code, generate machine code, and execute it. This project includes various components such as libraries for opcode handling, label management, error checking, and memory emulation. This is my second year course project for CS2102 at IIT Patna. 
+***
 
-## Table of Contents
-- [Features](#features)
-- [File Structure](#file-structure)
-- [How to Use](#how-to-use)
-- [Warnings and Errors](#warnings-and-errors)
+# The simple assembly language and its instruction set
+## Assembly Language
+This assembly language is for a machine with four registers,
 
-## Features
-- **Two-Pass Assembler**: 
-  - The first pass checks for syntax errors and creates a label table.
-  - The second pass resolves label addressing and generates machine code.
-- **Error Handling**: 
-  - Detects improper label names, duplicate labels, and other syntax errors.
-- **Memory Emulator**: 
-  - Executes the generated machine code and produces a memory dump.
-- **Normalization**: 
-  - Corrects formatting issues in assembly code for better processing.
+* Two registers, A & B, arranged as an internal stack.
+* A program counter, PC
+* A stack pointer, SP
+  
+These registers are 32 bits in size. Instructions have either no operands or a single operand. The operand is a signed 2's complement value. The encoding uses the bottom 8 bits for opcode and the upper 24 bits for operand.
 
-## The Simple Instruction Set
+As with most assembly languages, this is line based (one statement per line). Comments begin with a ';' and anything on the line after the ';' is ignored. Blank lines and lines containing only a comment are permitted (and ignored).
 
-This instruction set defines operations for a stack-based machine with four registers:
-- **A & B**: Act as an internal stack.
-- **PC (Program Counter)**: Tracks execution flow.
-- **SP (Stack Pointer)**: Manages the stack.
+Label definitions consist of the label name followed by a ':', and an optional statement. A valid label name is an alphanumeric string beginning with a letter . An operand is either a label or a number, which can be decimal, hex or octal.
 
-Instructions are **32-bit**, with the **lowest 8 bits as the opcode** and the **upper 24 bits as the operand**. Some instructions **do not require an operand**.
+## The Simple Instruction-Set
 
-### Instruction Table
+| Mnemonic | Opcode | Operand | Formal Specification | Description |
+|----------|--------|---------|----------------------|-------------|
+| **data** | -      | value   | -                    | Reserve a memory location, initialized to the value specified |
+| **ldc**  | 0      | value   | `B := A; A := value;`  | Load accumulator with the value specified |
+| **adc**  | 1      | value   | `A := A + value;`      | Add the value specified to the accumulator |
+| **ldl**  | 2      | offset  | `B := A; A := memory[SP + offset];` | Load local |
+| **stl**  | 3      | offset  | `memory[SP + offset] := A; A := B;` | Store local |
+| **ldnl** | 4      | offset  | `A := memory[A + offset];` | Load non-local |
+| **stnl** | 5      | offset  | `memory[A + offset] := B;` | Store non-local |
+| **add**  | 6      | -       | `A := B + A;`          | Addition |
+| **sub**  | 7      | -       | `A := B - A;`          | Subtraction |
+| **shl**  | 8      | -       | `A := B << A;`         | Shift left |
+| **shr**  | 9      | -       | `A := B >> A;`         | Shift right |
+| **adj**  | 10     | value   | `SP := SP + value;`    | Adjust SP |
+| **a2sp** | 11     | -       | `SP := A; A := B;`     | Transfer A to SP |
+| **sp2a** | 12     | -       | `B := A; A := SP;`     | Transfer SP to A |
+| **call** | 13     | offset  | `B := A; A := PC; PC := PC + offset;` | Call procedure |
+| **return** | 14   | -       | `PC := A; A := B;`     | Return from procedure |
+| **brz**  | 15     | offset  | `if A == 0 then PC := PC + offset;` | If accumulator is zero, branch to specified offset |
+| **brlz** | 16     | offset  | `if A < 0 then PC := PC + offset;` | If accumulator is less than zero, branch to specified offset |
+| **br**   | 17     | offset  | `PC := PC + offset;`   | Branch to specified offset |
+| **HALT** | 18     | -       | -                    | Stop the emulator. This is not a 'real' instruction, but needed to tell your emulator when to finish. |
+| **SET**  | -      | value   | -                    | Set the label on this line to the specified value (rather than the PC). |
 
-| Mnemonic  | Opcode | Operand  | Formal Specification                          | Description                                                               |
-|-----------|--------|----------|-----------------------------------------------|--------------                                                             |
-| **data**  | -      | value    | -                                             | Reserves a memory location initialized to the specified value.            |                                                  
-| **ldc**   | 0      | value    | `B := A; A := value;`                         | Load accumulator with a constant value.                                   |                           
-| **adc**   | 1      | value    | `A := A + value;`                             | Add a constant value to the accumulator.                                  |                            
-| **ldl**   | 2      | offset   | `B := A; A := memory[SP + offset];`           | Load from a stack offset.                                                 |             
-| **stl**   | 3      | offset   | `memory[SP + offset] := A; A := B;`           | Store to a stack offset.                                                  |            
-| **ldnl**  | 4      | offset   | `A := memory[A + offset];`                    | Load from a non-local memory location.                                    |                          
-| **stnl**  | 5      | offset   | `memory[A + offset] := B;`                    | Store to a non-local memory location.                                     |                         
-| **add**   | 6      | -        | `A := B + A;`                                 | Perform addition.                                                         |     
-| **sub**   | 7      | -        | `A := B - A;`                                 | Perform subtraction.                                                      |        
-| **shl**   | 8      | -        | `A := B << A;`                                | Shift left (logical).                                                     |         
-| **shr**   | 9      | -        | `A := B >> A;`                                | Shift right (logical).                                                    |          
-| **adj**   | 10     | value    | `SP := SP + value;`                           | Adjust the stack pointer.                                                 |             
-| **a2sp**  | 11     | -        | `SP := A; A := B;`                            | Transfer register A to the stack pointer.                                 |                             
-| **sp2a**  | 12     | -        | `B := A; A := SP;`                            | Transfer the stack pointer to register A.                                 |                             
-| **call**  | 13     | offset   | `B := A; A := PC; PC := PC + offset;`         | Call a subroutine.                                                        |      
-| **return**| 14     | -        | `PC := A; A := B;`                            | Return from a subroutine.                                                 |             
-| **brz**   | 15     | offset   | `if A == 0 then PC := PC + offset;`           | Branch if accumulator is zero.                                            |                  
-| **brlz**  | 16     | offset   | `if A < 0 then PC := PC + offset;`            | Branch if accumulator is negative.                                        |                      
-| **br**    | 17     | offset   | `PC := PC + offset;`                          | Unconditional branch.                                                     |         
-| **HALT**  | 18     | -        | -                                             | Stop execution (used for emulator termination).                           |                                   
-| **SET**   | -      | value    | -                                             | Assign a label to a specific value instead of the PC.                     |                                         
--------------------------------------------------------------------------------------------------------------------------------------------------------------
+***
+# Files Generated and Compilation+Run Instructions
+The Assembler generates 3 files:
 
-## Files Generated and Compilation Instructions
+* .log file for error, warning info.
+* .lst listing file.
+* .o object file for machine code object.
 
-The assembler generates **three output files**:
+**The .lst and .o files only generate if no errors are found in the .log file.** The .o object file generated will be used as an input to the Emulator.
 
-- **`.log` file** – Contains error, warning, and info messages.
-- **`.lst` file** – Listing file (only generated if no errors are found).
-- **`.o` file** – Machine code object file (used as input for the emulator).
+## Compilation instructions
 
-### Compilation Instructions
-
-To compile the **Assembler**:
-```sh
-g++ Assembler.cpp -o assembler
+To Compile Assembler code and create executable file:
 ```
+g++ Assembler.cpp
+```
+To Compile Emulator code and create executable file:
+```
+g++ Emulator.cpp
+```
+To run a created executable file:
 
-
-## How to Use
-1. **Open the Project**: Open the `DLCO_LAB_MINI_PROJEECT` folder in your preferred IDE (e.g., VS Code).
-2. **Edit Code**: Write your assembly code in `code.txt`.
-
-3. **Compile the Project**:
-   - Open a terminal or command prompt.
-   - Navigate to the `DLCO_LAB_MINI_PROJEECT` directory.
-   - Use the following command to compile the project, including all necessary libraries:
-     ```bash
-     g++ main.cpp libraries/Assembler_lib.cpp libraries/emu_lib.cpp libraries/error_library.cpp libraries/lable_lib.cpp libraries/opcode_lib.cpp libraries/reading_lib.cpp libraries/support_lib.cpp -o assembler
-     ```
-   - This command compiles `main.cpp` along with all the library files and creates an executable named `assembler`.
-4. **Run the Executable**:
-   - After successful compilation, run the executable with the following command:
-     ```bash
-     ./assembler
-     ```
-   - Choose the run type:
-     - Type `-mac` for machine code generation.
-     - Type `-emu` for emulation.
-
-## Warnings and Errors
-- The emulator may produce large memory dumps (up to 200-300 MB).
-- Ensure proper formatting of assembly code to avoid errors:
-  - Use labels correctly.
-  - Avoid using data declarations in incorrect formats.
-
-
+(Windows)
+```
+./a.exe
+```
+(Linux)
+```
+./a.out
+```
